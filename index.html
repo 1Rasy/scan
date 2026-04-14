@@ -6,8 +6,9 @@
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     body { font-family: Arial; text-align: center; background: #f5f5f5; }
-    #reader { width: 300px; margin: 20px auto; }
+    #reader { width: 320px; margin: 20px auto; }
     #result { margin-top: 20px; font-size: 18px; }
+    button { padding: 10px 20px; font-size: 16px; }
   </style>
 </head>
 <body>
@@ -15,15 +16,17 @@
 <h2>📷 连续扫码工具</h2>
 <div id="reader"></div>
 <div id="result">等待扫码...</div>
+<button onclick="startScan()">开始扫码</button>
 
 <script>
+let html5QrCode;
 let lastScan = "";
 let lastTime = 0;
 
 function onScanSuccess(decodedText) {
   const now = Date.now();
 
-  // 防止重复扫描
+  // 防重复（2秒内不重复）
   if (decodedText === lastScan && now - lastTime < 2000) return;
 
   lastScan = decodedText;
@@ -31,7 +34,7 @@ function onScanSuccess(decodedText) {
 
   document.getElementById("result").innerHTML = "识别条码：" + decodedText;
 
-  // 🔥 调你的商品API
+  // 查商品API
   fetch(`https://api.tanshuapi.com/api/barcode/v1/index?key=7c946af17460bb679bf5506ae61b0f8f&barcode=${decodedText}`)
     .then(res => res.json())
     .then(data => {
@@ -45,25 +48,41 @@ function onScanSuccess(decodedText) {
         document.getElementById("result").innerHTML = "❌ 未找到商品";
       }
     })
-    .catch(err => {
+    .catch(() => {
       document.getElementById("result").innerHTML = "⚠️ 查询失败";
     });
 }
 
-const html5QrCode = new Html5Qrcode("reader");
+function startScan() {
+  html5QrCode = new Html5Qrcode("reader");
 
-Html5Qrcode.getCameras().then(devices => {
-  if (devices && devices.length) {
+  Html5Qrcode.getCameras().then(devices => {
+    if (!devices || devices.length === 0) {
+      alert("没有摄像头");
+      return;
+    }
+
+    console.log("摄像头列表：", devices);
+
+    // 🔥 优先找后置摄像头（兼容中英文）
+    let backCamera = devices.find(device =>
+      device.label.toLowerCase().includes("back") ||
+      device.label.toLowerCase().includes("rear") ||
+      device.label.includes("后")
+    );
+
+    let cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
+
     html5QrCode.start(
-   devices[1].id
+      cameraId,
       {
-        fps: 10,
-        qrbox: 250
+        fps: 15,
+        qrbox: { width: 250, height: 150 }
       },
       onScanSuccess
     );
-  }
-});
+  });
+}
 </script>
 
 </body>
