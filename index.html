@@ -61,6 +61,8 @@ function onScanSuccess(code) {
   lastScan = code;
   lastTime = now;
 
+  console.log("识别到条码：", code);
+
   const name = productDB[code];
 
   if (name) {
@@ -89,12 +91,20 @@ function updateStats() {
   `;
 }
 
-// ▶️ 开始扫码
+// ▶️ 开始扫码（已修复所有常见问题）
 function startScan() {
   html5QrCode = new Html5Qrcode("reader");
 
   Html5Qrcode.getCameras().then(devices => {
 
+    if (!devices || devices.length === 0) {
+      alert("没有摄像头");
+      return;
+    }
+
+    console.log("摄像头列表：", devices);
+
+    // 🔥 优先找后置摄像头
     let back = devices.find(d =>
       d.label.toLowerCase().includes("back") ||
       d.label.toLowerCase().includes("rear") ||
@@ -107,9 +117,19 @@ function startScan() {
       camId,
       {
         fps: 15,
-        qrbox: { width: 250, height: 150 }
+        qrbox: 250,
+        // 🔥 关键：只识别商品条码
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8
+        ]
       },
-      onScanSuccess
+      (decodedText) => {
+        onScanSuccess(decodedText);
+      },
+      (error) => {
+        // 忽略持续扫描错误
+      }
     );
   });
 }
