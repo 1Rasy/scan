@@ -2,79 +2,109 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <title>扫码识别工具</title>
+  <title>扫码工具</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     body { font-family: Arial; text-align: center; background: #f5f5f5; }
     #reader { width: 320px; margin: 20px auto; }
-    #result { margin-top: 20px; font-size: 18px; }
-    button { padding: 10px 20px; font-size: 16px; }
+    #result { margin-top: 20px; font-size: 20px; }
+    #stats { margin-top: 15px; font-size: 16px; }
+    button { padding: 10px 20px; font-size: 16px; margin: 10px; }
   </style>
 </head>
 <body>
 
 <h2>📷 连续扫码工具</h2>
+
 <div id="reader"></div>
-<div id="result">等待扫码...</div>
+
+<div id="result">⏳ 商品库加载中...</div>
+
+<div id="stats">
+  已扫次数：0<br>
+  已扫SKU：0
+</div>
+
 <button onclick="startScan()">开始扫码</button>
+<button onclick="exportData()">导出记录</button>
 
 <script>
-let html5QrCode;
+let productDB = {};
+let scanList = [];
+let scannedSet = new Set();
+
 let lastScan = "";
 let lastTime = 0;
+let html5QrCode;
 
-function onScanSuccess(decodedText) {
+// ✅ 加载商品库
+fetch("products.json")
+  .then(res => res.json())
+  .then(data => {
+    productDB = data;
+    document.getElementById("result").innerHTML = "✅ 商品库加载完成，点击开始扫码";
+  })
+  .catch(() => {
+    document.getElementById("result").innerHTML = "❌ 商品库加载失败";
+  });
+
+// 📷 扫码成功
+function onScanSuccess(code) {
+  if (Object.keys(productDB).length === 0) {
+    document.getElementById("result").innerHTML = "⏳ 商品库还没加载好";
+    return;
+  }
+
   const now = Date.now();
+  if (code === lastScan && now - lastTime < 1500) return;
 
-  // 防重复（2秒内不重复）
-  if (decodedText === lastScan && now - lastTime < 2000) return;
-
-  lastScan = decodedText;
+  lastScan = code;
   lastTime = now;
 
-  document.getElementById("result").innerHTML = "识别条码：" + decodedText;
+  const name = productDB[code];
 
-  // 查商品API
-  fetch(`https://api.tanshuapi.com/api/barcode/v1/index?key=7c946af17460bb679bf5506ae61b0f8f&barcode=${decodedText}`)
-    .then(res => res.json())
-    .then(data => {
-      if (data.code === 1 && data.data) {
-        document.getElementById("result").innerHTML = `
-          ✅ ${data.data.goodsName}<br>
-          🏷 品牌：${data.data.brand}<br>
-          📦 规格：${data.data.spec}
-        `;
-      } else {
-        document.getElementById("result").innerHTML = "❌ 未找到商品";
-      }
-    })
-    .catch(() => {
-      document.getElementById("result").innerHTML = "⚠️ 查询失败";
+  if (name) {
+    document.getElementById("result").innerHTML = `✅ ${name}`;
+
+    scanList.push({
+      barcode: code,
+      name: name,
+      time: new Date().toLocaleString()
     });
+
+    scannedSet.add(code);
+
+  } else {
+    document.getElementById("result").innerHTML = `❌ 未收录：${code}`;
+  }
+
+  updateStats();
 }
 
+// 📊 更新统计
+function updateStats() {
+  document.getElementById("stats").innerHTML = `
+    已扫次数：${scanList.length}<br>
+    已扫SKU：${scannedSet.size}
+  `;
+}
+
+// ▶️ 开始扫码
 function startScan() {
   html5QrCode = new Html5Qrcode("reader");
 
   Html5Qrcode.getCameras().then(devices => {
-    if (!devices || devices.length === 0) {
-      alert("没有摄像头");
-      return;
-    }
 
-    console.log("摄像头列表：", devices);
-
-    // 🔥 优先找后置摄像头（兼容中英文）
-    let backCamera = devices.find(device =>
-      device.label.toLowerCase().includes("back") ||
-      device.label.toLowerCase().includes("rear") ||
-      device.label.includes("后")
+    let back = devices.find(d =>
+      d.label.toLowerCase().includes("back") ||
+      d.label.toLowerCase().includes("rear") ||
+      d.label.includes("后")
     );
 
-    let cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id;
+    let camId = back ? back.id : devices[devices.length - 1].id;
 
     html5QrCode.start(
-      cameraId,
+      camId,
       {
         fps: 15,
         qrbox: { width: 250, height: 150 }
@@ -82,6 +112,23 @@ function startScan() {
       onScanSuccess
     );
   });
+}
+
+// 📤 导出CSV
+function exportData() {
+  let csv = "条码,商品名,时间\n";
+
+  scanList.forEach(item => {
+    csv += `${item.barcode},${item.name},${item.time}\n`;
+  });
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "扫码记录.csv";
+  a.click();
 }
 </script>
 
